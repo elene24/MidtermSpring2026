@@ -1,9 +1,12 @@
 import java.util.ArrayList;
 import java.util.Random;
 import java.util.Scanner;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import persistence.GameRecorder;
+import persistence.JpaUtil;
+import persistence.ReportRepository;
+import persistence.RoundEntity;
 
 /**
  * Entry point and game orchestrator.
@@ -12,12 +15,15 @@ import org.slf4j.LoggerFactory;
  *   - parsing CLI arguments
  *   - running the requested number of games
  *   - printing final scores
+ *   - persisting round results (Assignment 5)
+ *   - printing reports on request (Assignment 5)
  *
  * Rule logic lives in {@link Rules}.
  * Card representation lives in {@link Card}.
  * Mutable game data lives in {@link GameState}.
  * Console rendering and prompts live in {@link ConsoleView}.
  * Bot decisions live in {@link BotStrategy}.
+ * Persistence lives in the {@code persistence} package.
  */
 public class Main {
 
@@ -32,6 +38,17 @@ public class Main {
     static String calledColor = "";
 
     public static void main(String[] args) {
+        // ── Report mode: print stats and exit, no game is played ────────────
+        if (args.length > 0 && args[0].equals("--report")) {
+            JpaUtil.init("uno-pu");
+            try {
+                printReports();
+            } finally {
+                JpaUtil.close();
+            }
+            return;
+        }
+
         int     bots  = 3;
         int     games = 1;
         boolean human = false;
@@ -46,7 +63,8 @@ public class Main {
             else if (args[i].equals("--seed")  && i + 1 < args.length) seed = Long.parseLong(args[++i]);
             else if (args[i].equals("--self-test")) { selfTest(); return; }
             else if (args[i].equals("--help")) {
-                System.out.println("Usage: scripts/run.sh [--bots N] [--games N] [--human] [--quiet] [--seed N]");
+                System.out.println("Usage: java -jar uno-game.jar [--bots N] [--games N] [--human] [--quiet] [--seed N]");
+                System.out.println("       java -jar uno-game.jar --report   (print game history and stats)");
                 return;
             }
         }
@@ -65,14 +83,58 @@ public class Main {
 
         log.info("Game started with players={}, seed={}", playerNames, seed);
 
-        for (int g = 1; g <= games; g++) {
-            view.showGameHeader(g);
-            GameState state = new GameState(playerNames, humanPlayers, random);
-            playGame(state, view, scores, scanner);
+        JpaUtil.init("uno-pu");
+        GameRecorder recorder = new GameRecorder();
+        recorder.startSession(playerNames);
+
+        try {
+            for (int g = 1; g <= games; g++) {
+                view.showGameHeader(g);
+
+                int[] before = scores.clone();
+                GameState state = new GameState(playerNames, humanPlayers, random);
+                int winnerIndex = playGame(state, view, scores, scanner);
+
+                int[] delta = new int[scores.length];
+                for (int i = 0; i < scores.length; i++) delta[i] = scores[i] - before[i];
+
+                int[] roundScores = new int[playerNames.size()];
+                for (int i = 0; i < playerNames.size(); i++) roundScores[i] = delta[i];
+
+                String winnerName = (winnerIndex >= 0) ? playerNames.get(winnerIndex) : null;
+                recorder.recordRound(playerNames, roundScores, winnerName);
+            }
+
+            view.showFinalScores(playerNames, scores);
+            log.info("Session ended. Final scores: {}", java.util.Arrays.toString(scores));
+        } finally {
+            recorder.endSession();
+            JpaUtil.close();
+        }
+    }
+
+    // ── Reporting (Assignment 5) ──────────────────────────────────────────────
+
+    static void printReports() {
+        ReportRepository reports = new ReportRepository();
+
+        System.out.println("=== Recent Rounds ===");
+        for (RoundEntity r : reports.listRecentRounds(10)) {
+            String winnerName = (r.getWinner() != null) ? r.getWinner().getName() : "(none)";
+            System.out.println("Round " + r.getRoundNumber()
+                    + " | completed " + r.getCompletedAt()
+                    + " | winner: " + winnerName);
         }
 
-        view.showFinalScores(playerNames, scores);
-        log.info("Session ended. Final scores: {}", java.util.Arrays.toString(scores));
+        System.out.println("\n=== Player Win Counts ===");
+        for (Object[] row : reports.playerWinCounts()) {
+            System.out.println(row[0] + ": " + row[1] + " win(s)");
+        }
+
+        System.out.println("\n=== Highest Scores ===");
+        for (Object[] row : reports.highestScores(10)) {
+            System.out.println(row[0] + ": " + row[1] + " points");
+        }
     }
 
     // ── Player setup ─────────────────────────────────────────────────────────
@@ -92,7 +154,11 @@ public class Main {
 
     // ── Game loop ─────────────────────────────────────────────────────────────
 
-    static void playGame(GameState state, ConsoleView view, int[] scores, Scanner scanner) {
+    /**
+     * Plays one round to completion.
+     * @return the index of the winning player, or -1 if the safety limit was hit with no winner
+     */
+    static int playGame(GameState state, ConsoleView view, int[] scores, Scanner scanner) {
         state.deal();
 
         for (int guard = 0; guard < 3000; guard++) {
@@ -174,10 +240,11 @@ public class Main {
             // ── Win condition ─────────────────────────────────────────────────
             if (hand.isEmpty()) {
                 int points = state.scoreAllOpponents(state.currentPlayer());
-                scores[state.currentPlayer()] += points;
+                int winnerIndex = state.currentPlayer();
+                scores[winnerIndex] += points;
                 view.showWin(name, points);
                 log.info("Round ended: {} wins, scores {} points", name, points);
-                return;
+                return winnerIndex;
             }
 
             // ── Action card effects ───────────────────────────────────────────
@@ -186,6 +253,7 @@ public class Main {
 
         view.showSafetyLimit();
         log.warn("Round ended: safety limit reached (3000 turns)");
+        return -1;
     }
 
     /**

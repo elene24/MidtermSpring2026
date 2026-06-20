@@ -1,1 +1,6 @@
+target/
+game.log
+dependency-reduced-pom.xml
+.idea/
+*.iml
 out/

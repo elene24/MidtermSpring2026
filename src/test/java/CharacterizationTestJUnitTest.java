@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Thin JUnit adapter so the existing CharacterizationTest suite
  * runs through `mvn test` without any manual classpath setup.
  */
-public class CharacterizationTestJUnit {
+public class CharacterizationTestJUnitTest {
 
     @Test
     void allCharacterizationChecksPass() {

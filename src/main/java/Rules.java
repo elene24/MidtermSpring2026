@@ -9,6 +9,12 @@
  */
 public final class Rules {
 
+    /** Penalty applied when a player fails to call UNO in time. */
+    public static final int MISSED_UNO_PENALTY_CARDS = 2;
+
+    /** Default score needed across rounds to win the overall game. */
+    public static final int DEFAULT_TARGET_SCORE = 500;
+
     private Rules() {}   // utility class, not instantiated
 
     /**
@@ -56,5 +62,22 @@ public final class Rules {
             total += new Card(code).points();
         }
         return total;
+    }
+
+    /** True once any score in the array has reached the target. */
+    public static boolean targetReached(int[] scores, int target) {
+        for (int s : scores) {
+            if (s >= target) return true;
+        }
+        return false;
+    }
+
+    /** Index of the highest score; ties go to the lowest index. */
+    public static int leaderIndex(int[] scores) {
+        int leader = 0;
+        for (int i = 1; i < scores.length; i++) {
+            if (scores[i] > scores[leader]) leader = i;
+        }
+        return leader;
     }
 }

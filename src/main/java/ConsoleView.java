@@ -49,9 +49,14 @@ public class ConsoleView {
         System.out.println(playerName + " says UNO!");
     }
 
+    public void showMissedUno(String playerName) {
+        if (quiet) return;
+        System.out.println(playerName + " did not call UNO in time and draws two penalty cards.");
+    }
+
     public void showWin(String playerName, int points) {
         if (quiet) return;
-        System.out.println(playerName + " wins and scores " + points);
+        System.out.println(playerName + " wins the round and scores " + points);
     }
 
     public void showPenalty(String playerName, String card) {
@@ -81,7 +86,7 @@ public class ConsoleView {
 
     public void showGameHeader(int gameNumber) {
         if (quiet) return;
-        System.out.println("\n=== Game " + gameNumber + " ===");
+        System.out.println("\n=== Round " + gameNumber + " ===");
     }
 
     public void showFinalScores(java.util.List<String> names, int[] scores) {
@@ -89,6 +94,10 @@ public class ConsoleView {
         for (int i = 0; i < names.size(); i++) {
             System.out.println(names.get(i) + ": " + scores[i]);
         }
+    }
+
+    public void showMatchWinner(String name, int target) {
+        System.out.println(name + " reaches the target score of " + target + " and wins the match!");
     }
 
     // ── Human input ──────────────────────────────────────────────────────────
@@ -157,6 +166,17 @@ public class ConsoleView {
             }
             System.out.println("Bad color.");
         }
+    }
+
+    /**
+     * Prompts a human who just played down to one card whether they want to
+     * call UNO. Declining (or any non-yes answer) is treated as a missed call
+     * and is penalized immediately by the game loop — see docs/rules-supported.md.
+     */
+    public boolean askCallUno(String playerName) {
+        System.out.print(playerName + ", you have one card left. Call UNO? y/n: ");
+        String answer = scanner.nextLine().trim();
+        return answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes");
     }
 
     // ── Formatting helpers ───────────────────────────────────────────────────

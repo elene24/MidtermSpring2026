@@ -3,27 +3,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
-
-/**
- * Characterization tests for the UNO CLI game.
- *
- * These tests document the CURRENT behavior of the implementation, including
- * quirks.  Their purpose is to protect existing behavior during refactoring.
- * They are not tests for an ideal or rules-compliant UNO.
- *
- * Run with:  java -cp out:test CharacterizationTest
- */
 public class CharacterizationTest {
 
     static int passed = 0;
     static int failed = 0;
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 1. Card — parsing and point values
-    // ══════════════════════════════════════════════════════════════════════════
-
     static void testCardParsing() {
-        // color extraction
         assertEqual("R", new Card("R5").color(),   "color of R5 is R");
         assertEqual("Y", new Card("Y0").color(),   "color of Y0 is Y");
         assertEqual("G", new Card("GS").color(),   "color of GS is G");
@@ -31,7 +16,6 @@ public class CharacterizationTest {
         assertEqual("",  new Card("W").color(),    "color of W is empty");
         assertEqual("",  new Card("W4").color(),   "color of W4 is empty");
 
-        // rank extraction
         assertEqual(Card.NUMBER,         new Card("R5").rank(),  "rank of R5 is NUMBER");
         assertEqual(Card.NUMBER,         new Card("B0").rank(),  "rank of B0 is NUMBER");
         assertEqual(Card.SKIP,           new Card("YS").rank(),  "rank of YS is SKIP");
@@ -40,13 +24,11 @@ public class CharacterizationTest {
         assertEqual(Card.WILD,           new Card("W").rank(),   "rank of W is WILD");
         assertEqual(Card.WILD_DRAW_FOUR, new Card("W4").rank(),  "rank of W4 is WILD_DRAW_FOUR");
 
-        // number extraction
         assertEqual(5,  new Card("R5").number(), "number of R5 is 5");
         assertEqual(0,  new Card("G0").number(), "number of G0 is 0");
         assertEqual(9,  new Card("B9").number(), "number of B9 is 9");
         assertEqual(-1, new Card("RS").number(), "number of RS (action) is -1");
 
-        // point values
         assertEqual(5,  new Card("R5").points(),   "points R5 = 5");
         assertEqual(0,  new Card("Y0").points(),   "points Y0 = 0");
         assertEqual(9,  new Card("G9").points(),   "points G9 = 9");
@@ -56,10 +38,6 @@ public class CharacterizationTest {
         assertEqual(50, new Card("W").points(),    "points wild = 50");
         assertEqual(50, new Card("W4").points(),   "points wild-draw-four = 50");
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 2. Rules.isLegal — matching rules
-    // ══════════════════════════════════════════════════════════════════════════
 
     static void testMatchByColor() {
         assertTrue(Rules.isLegal("R2", "R9", ""),  "R2 on R9: same color");
@@ -92,37 +70,21 @@ public class CharacterizationTest {
     }
 
     static void testCalledColorAfterWild() {
-        // After a wild is played and "B" is called, any blue card is now legal
-        // even if it doesn't match the up-card's original color
         assertTrue(Rules.isLegal("B3",  "W",  "B"), "B3 on W called B: matches called color");
         assertTrue(Rules.isLegal("BS",  "W4", "B"), "BS on W4 called B: matches called color");
         assertFalse(Rules.isLegal("R3", "W",  "B"), "R3 on W called B: wrong color");
         assertFalse(Rules.isLegal("G3", "W4", "B"), "G3 on W4 called B: wrong color");
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 3. Scoring
-    // ══════════════════════════════════════════════════════════════════════════
-
     static void testScoring() {
-        // From docs example: R5 + B9 + GS + W = 5 + 9 + 20 + 50 = 84
         List<String> hand = Arrays.asList("R5", "B9", "GS", "W");
         assertEqual(84, Rules.scoreHand(hand), "scoring example from rules: 84");
-
-        // Empty hand = 0
         assertEqual(0, Rules.scoreHand(new ArrayList<>()), "empty hand scores 0");
-
-        // All wildcards
         List<String> wilds = Arrays.asList("W", "W4", "W");
         assertEqual(150, Rules.scoreHand(wilds), "three wildcards score 150");
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 4. BotStrategy
-    // ══════════════════════════════════════════════════════════════════════════
-
     static void testBotPriority() {
-        // Bot prefers DRAW_TWO > SKIP > NUMBER > WILD
         ArrayList<String> hand = new ArrayList<>(Arrays.asList("R2", "RS", "R+2", "W"));
         int choice = BotStrategy.chooseCard(hand, "R5", "");
         assertEqual("R+2", hand.get(choice), "bot prefers DRAW_TWO over SKIP and NUMBER");
@@ -135,7 +97,6 @@ public class CharacterizationTest {
         int choice3 = BotStrategy.chooseCard(hand3, "R5", "");
         assertEqual("R2", hand3.get(choice3), "bot prefers NUMBER over WILD");
 
-        // Bot plays wild only when nothing else is legal
         ArrayList<String> hand4 = new ArrayList<>(Arrays.asList("G2", "W"));
         int choice4 = BotStrategy.chooseCard(hand4, "R5", "");
         assertEqual("W", hand4.get(choice4), "bot uses wild as last resort");
@@ -148,22 +109,15 @@ public class CharacterizationTest {
     }
 
     static void testBotChoosesColor() {
-        // Picks most frequent color in hand
         ArrayList<String> hand = new ArrayList<>(Arrays.asList("B1", "B2", "R3"));
         assertEqual("B", BotStrategy.chooseColor(hand), "bot picks most frequent color B");
 
         ArrayList<String> all = new ArrayList<>(Arrays.asList("R1", "Y1", "G1", "B1"));
-        // Tie: R wins (R >= Y >= G >= B precedence)
         assertEqual("R", BotStrategy.chooseColor(all), "bot breaks tie toward R");
 
-        // Hand of all wilds: each has no color, so all counts 0 → defaults to R
         ArrayList<String> wilds = new ArrayList<>(Arrays.asList("W", "W4"));
         assertEqual("R", BotStrategy.chooseColor(wilds), "bot with only wilds chooses R");
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 5. GameState — deck, draw, deal
-    // ══════════════════════════════════════════════════════════════════════════
 
     static void testDealHandSizes() {
         List<String>  names  = Arrays.asList("A", "B", "C");
@@ -177,7 +131,6 @@ public class CharacterizationTest {
     }
 
     static void testUpCardIsNotWild() {
-        // Initial up-card must never be a wild (rule: wilds are re-drawn at setup)
         for (int seed = 0; seed < 30; seed++) {
             List<String>  names  = Arrays.asList("A", "B");
             List<Boolean> humans = Arrays.asList(false, false);
@@ -189,12 +142,10 @@ public class CharacterizationTest {
     }
 
     static void testDrawReshufflesDiscard() {
-        // Draw enough cards that the deck must reshuffle — should not throw
         List<String>  names  = Arrays.asList("A", "B");
         List<Boolean> humans = Arrays.asList(false, false);
         GameState state  = new GameState(names, humans, new Random(7));
         state.deal();
-        // Draw 80 cards (more than exist in the deck) and never throw
         boolean ok = true;
         try {
             for (int i = 0; i < 80; i++) state.drawCard();
@@ -210,14 +161,11 @@ public class CharacterizationTest {
         GameState state  = new GameState(names, humans, new Random(1));
         state.deal();
 
-        // Force to player 0 by setting up manually isn't exposed, so we test
-        // that advance wraps around correctly regardless of start
         int start = state.currentPlayer();
         state.advancePlayer();
         int next  = state.currentPlayer();
         assertFalse(start == next, "advancing changes current player");
 
-        // Reverse then advance should go backward
         state.reverseDirection();
         state.advancePlayer();
         assertEqual(start, state.currentPlayer(), "reverse + advance returns to start (3 players)");
@@ -229,19 +177,13 @@ public class CharacterizationTest {
         GameState state  = new GameState(names, humans, new Random(1));
         state.deal();
 
-        // Manually clear and set known hands
         state.handOf(0).clear();
         state.handOf(1).clear();
-        state.handOf(1).add("R5");   // 5 points
-        state.handOf(1).add("W");    // 50 points
+        state.handOf(1).add("R5");
+        state.handOf(1).add("W");
 
-        // If player 0 wins, score is sum of player 1's hand = 55
         assertEqual(55, state.scoreAllOpponents(0), "scoreAllOpponents sums remaining hands correctly");
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 6. ConsoleView formatting helpers
-    // ══════════════════════════════════════════════════════════════════════════
 
     static void testFormatHand() {
         ArrayList<String> hand = new ArrayList<>(Arrays.asList("R5", "GS", "W"));
@@ -254,18 +196,13 @@ public class CharacterizationTest {
         assertEqual("0:W4", ConsoleView.formatHand(single), "single card formats correctly");
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 7. End-to-end deterministic game (regression / quirk preservation)
-    // ══════════════════════════════════════════════════════════════════════════
-
     static void testDeterministicGameScore() {
-        // With seed 42 and 3 bots, the winner and score must not change after refactoring.
         Main.scores = new int[10];
         Main.playerNames.clear(); Main.humanPlayers.clear();
         Main.setupPlayers(3, false);
 
         Random      rng  = new Random(42);
-        ConsoleView view = new ConsoleView(true, null);   // quiet
+        ConsoleView view = new ConsoleView(true, null);
         GameState gs   = new GameState(Main.playerNames, Main.humanPlayers, rng);
         Main.playGame(gs, view, Main.scores, null);
 
@@ -273,11 +210,6 @@ public class CharacterizationTest {
     }
 
     static void testSafetyLimitStopsGame() {
-        // A game that would last > 3000 turns must stop gracefully.
-        // We can't easily force this without mocking, but we verify
-        // the guard constant is exactly 3000 by running a normal game
-        // and confirming it terminated within the limit.
-        // (This is more of a smoke test for the loop guard.)
         Main.scores = new int[10];
         Main.playerNames.clear(); Main.humanPlayers.clear();
         Main.setupPlayers(2, false);
@@ -291,22 +223,14 @@ public class CharacterizationTest {
         assertTrue(true, "10 two-player games all terminate without hanging");
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 8. Edge cases that surprised us
-    // ══════════════════════════════════════════════════════════════════════════
-
     static void testReverseActsAsSkipInTwoPlayerGame() {
-        // In a 2-player game, reversing direction and advancing once lands on
-        // the same player as advancing twice would (documented quirk).
         List<String>  names  = Arrays.asList("A", "B");
         List<Boolean> humans = Arrays.asList(false, false);
         GameState state  = new GameState(names, humans, new Random(1));
         state.deal();
 
-        // Force player 0
         while (state.currentPlayer() != 0) state.advancePlayer();
 
-        // Apply reverse effect manually (same as applyCardEffect for REVERSE)
         state.reverseDirection();
         state.advancePlayer();
         state.advancePlayer();
@@ -316,28 +240,22 @@ public class CharacterizationTest {
     }
 
     static void testWildW4IsAlwaysLegal() {
-        // W4 should be legal even when the player has legal colored cards.
-        // This implementation does not enforce the "must not have matching color" rule.
         assertTrue(Rules.isLegal("W4", "R5", ""),  "W4 legal even when colors available (no challenge rule)");
         assertTrue(Rules.isLegal("W4", "G3", "G"), "W4 legal even with called color");
     }
 
     static void testBotUsesCalledColorAfterWild() {
-        // Bot should be able to play a card matching the called color
         ArrayList<String> hand = new ArrayList<>(Arrays.asList("B5", "R3"));
-        // upCard is W4, called color is B → B5 is legal via called color
         int choice = BotStrategy.chooseCard(hand, "W4", "B");
         assertEqual("B5", hand.get(choice), "bot plays card matching called color after wild");
     }
 
     static void testNumberZeroScoresZeroPoints() {
-        // Edge: 0-cards score 0, not face-value-of-character '0'
         assertEqual(0, new Card("R0").points(), "R0 scores 0 points, not ASCII 48");
         assertEqual(0, new Card("B0").points(), "B0 scores 0 points");
     }
 
     static void testAllFourColorsSameRankMatch() {
-        // Every color of Skip can be played on any other color of Skip
         String[] colors = {"R", "Y", "G", "B"};
         for (String c1 : colors) {
             for (String c2 : colors) {
@@ -352,10 +270,6 @@ public class CharacterizationTest {
             }
         }
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Test runner
-    // ══════════════════════════════════════════════════════════════════════════
 
     public static void main(String[] args) {
         run("Card parsing",              CharacterizationTest::testCardParsing);
@@ -382,12 +296,10 @@ public class CharacterizationTest {
         run("Zero scores 0 points",      CharacterizationTest::testNumberZeroScoresZeroPoints);
         run("All colors same rank",      CharacterizationTest::testAllFourColorsSameRankMatch);
 
-        System.out.println("\n─────────────────────────────────────────");
+        System.out.println("\n-----------------------------------------");
         System.out.println("Results: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }
-
-    // ── Assertion helpers ─────────────────────────────────────────────────────
 
     static void run(String name, Runnable test) {
         System.out.print("  " + name + " ... ");

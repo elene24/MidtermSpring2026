@@ -10,12 +10,12 @@ import org.slf4j.LoggerFactory;
  *
  * Main is responsible only for:
  *   - parsing CLI arguments
- *   - running the requested number of games
- *   - printing final scores
+ *   - running rounds until a target score is reached (or a round cap is hit)
+ *   - printing final scores and the match winner
  *
  * Rule logic lives in {@link Rules}.
  * Card representation lives in {@link Card}.
- * Mutable game data lives in {@link GameState}.
+ * Mutable round data lives in {@link GameState}.
  * Console rendering and prompts live in {@link ConsoleView}.
  * Bot decisions live in {@link BotStrategy}.
  */
@@ -32,21 +32,25 @@ public class Main {
     static String calledColor = "";
 
     public static void main(String[] args) {
-        int     bots  = 3;
-        int     games = 1;
-        boolean human = false;
-        boolean quiet = false;
-        long    seed  = System.currentTimeMillis();
+        int     bots   = 3;
+        int     rounds = 0;        // 0 = no fixed cap, play until target score
+        int     target = Rules.DEFAULT_TARGET_SCORE;
+        boolean human  = false;
+        boolean quiet  = false;
+        long    seed   = System.currentTimeMillis();
 
         for (int i = 0; i < args.length; i++) {
-            if      (args[i].equals("--bots")  && i + 1 < args.length) bots  = Integer.parseInt(args[++i]);
-            else if (args[i].equals("--games") && i + 1 < args.length) games = Integer.parseInt(args[++i]);
+            if      (args[i].equals("--bots")   && i + 1 < args.length) bots   = Integer.parseInt(args[++i]);
+            else if (args[i].equals("--games")  && i + 1 < args.length) rounds = Integer.parseInt(args[++i]);
+            else if (args[i].equals("--target") && i + 1 < args.length) target = Integer.parseInt(args[++i]);
             else if (args[i].equals("--human"))  human = true;
             else if (args[i].equals("--quiet"))  quiet = true;
-            else if (args[i].equals("--seed")  && i + 1 < args.length) seed = Long.parseLong(args[++i]);
+            else if (args[i].equals("--seed")   && i + 1 < args.length) seed = Long.parseLong(args[++i]);
             else if (args[i].equals("--self-test")) { selfTest(); return; }
             else if (args[i].equals("--help")) {
-                System.out.println("Usage: scripts/run.sh [--bots N] [--games N] [--human] [--quiet] [--seed N]");
+                System.out.println("Usage: scripts/run.sh [--bots N] [--games N] [--target N] [--human] [--quiet] [--seed N]");
+                System.out.println("  --games N  caps the match at N rounds (0 = no cap, default)");
+                System.out.println("  --target N score needed to win the match (default 500)");
                 return;
             }
         }
@@ -63,16 +67,23 @@ public class Main {
             return;
         }
 
-        log.info("Game started with players={}, seed={}", playerNames, seed);
+        log.info("Match started with players={}, seed={}, target={}", playerNames, seed, target);
 
-        for (int g = 1; g <= games; g++) {
-            view.showGameHeader(g);
+        scores = new int[playerNames.size()];
+        int roundsCap = rounds > 0 ? rounds : Integer.MAX_VALUE;
+
+        int round = 0;
+        while (round < roundsCap && !Rules.targetReached(scores, target)) {
+            round++;
+            view.showGameHeader(round);
             GameState state = new GameState(playerNames, humanPlayers, random);
             playGame(state, view, scores, scanner);
         }
 
         view.showFinalScores(playerNames, scores);
-        log.info("Session ended. Final scores: {}", java.util.Arrays.toString(scores));
+        int winner = Rules.leaderIndex(scores);
+        view.showMatchWinner(playerNames.get(winner), target);
+        log.info("Match ended after {} round(s). Final scores: {}", round, java.util.Arrays.toString(scores));
     }
 
     // ── Player setup ─────────────────────────────────────────────────────────
@@ -134,6 +145,7 @@ public class Main {
                 log.warn("Invalid input: out-of-range index from {}", name);
                 view.showPenalty(name, "");
                 state.addPenaltyCard(state.currentPlayer());
+                state.resetUnoCall(state.currentPlayer());
                 state.advancePlayer();
                 continue;
             }
@@ -150,6 +162,7 @@ public class Main {
                 log.warn("Invalid input: illegal card {} attempted by {}", card, name);
                 view.showIllegal(name, card);
                 state.addPenaltyCard(state.currentPlayer());
+                state.resetUnoCall(state.currentPlayer());
                 state.advancePlayer();
                 continue;
             }
@@ -158,6 +171,7 @@ public class Main {
             state.playCard(chosen);
             view.showPlay(name, card);
             log.info("Card played: {} by {}", card, name);
+            state.resetUnoCall(state.currentPlayer()); // hand size just changed away from 1
 
             // ── Wild: choose color ────────────────────────────────────────────
             if (new Card(card).isWild()) {
@@ -168,9 +182,6 @@ public class Main {
                 view.showCalledColor(name, color);
             }
 
-            // ── UNO announcement ─────────────────────────────────────────────
-            if (hand.size() == 1) view.showUno(name);
-
             // ── Win condition ─────────────────────────────────────────────────
             if (hand.isEmpty()) {
                 int points = state.scoreAllOpponents(state.currentPlayer());
@@ -178,6 +189,25 @@ public class Main {
                 view.showWin(name, points);
                 log.info("Round ended: {} wins, scores {} points", name, points);
                 return;
+            }
+
+            // ── UNO call ──────────────────────────────────────────────────────
+            // Bots always call immediately (documented simplification). Humans
+            // are prompted; declining is treated as a missed call and penalized
+            // right away, before the next relevant action (this player's turn end).
+            if (hand.size() == 1) {
+                if (human) {
+                    if (view.askCallUno(name)) {
+                        state.callUno(state.currentPlayer());
+                        view.showUno(name);
+                    } else {
+                        state.checkAndPenalizeMissedUno(state.currentPlayer());
+                        view.showMissedUno(name);
+                    }
+                } else {
+                    state.callUno(state.currentPlayer());
+                    view.showUno(name);
+                }
             }
 
             // ── Action card effects ───────────────────────────────────────────
@@ -212,15 +242,16 @@ public class Main {
 
             case Card.DRAW_TWO:
                 state.advancePlayer();
-                state.addPenaltyCard(state.currentPlayer());
-                state.addPenaltyCard(state.currentPlayer());
+                state.addPenaltyCards(state.currentPlayer(), 2);
+                state.resetUnoCall(state.currentPlayer());
                 view.showDrawsTwo(state.currentPlayerName());
                 state.advancePlayer();
                 break;
 
             case Card.WILD_DRAW_FOUR:
                 state.advancePlayer();
-                for (int i = 0; i < 4; i++) state.addPenaltyCard(state.currentPlayer());
+                state.addPenaltyCards(state.currentPlayer(), 4);
+                state.resetUnoCall(state.currentPlayer());
                 view.showDrawsFour(state.currentPlayerName());
                 state.advancePlayer();
                 break;
